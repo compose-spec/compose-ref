@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/docker/docker/api/types/filters"
 	"io/ioutil"
 	"log"
 	"os"
@@ -59,12 +60,9 @@ func main() {
 					if err != nil {
 						return err
 					}
-					if project == "" {
-						abs, err := filepath.Abs(file)
-						if err != nil {
-							return err
-						}
-						project = filepath.Base(filepath.Dir(abs))
+					project, err = getProject(project, file)
+					if err != nil {
+						return err
 					}
 
 					return doUp(project, config)
@@ -78,7 +76,11 @@ func main() {
 					if err != nil {
 						return err
 					}
-					return doDown(config)
+					project, err = getProject(project, file)
+					if err != nil {
+						return err
+					}
+					return doDown(project, config)
 				},
 			},
 		},
@@ -88,6 +90,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func getProject(project string, file string) (string, error) {
+	if project == "" {
+		abs, err := filepath.Abs(file)
+		if err != nil {
+			return "", err
+		}
+		project = filepath.Base(filepath.Dir(abs))
+	}
+	return project, nil
 }
 
 func doUp(project string, config *compose.Config) error {
@@ -169,7 +182,29 @@ func createService(cli *client.Client, project string, s compose.ServiceConfig) 
 	return nil
 }
 
-func doDown(config *compose.Config) error {
+func collectContainers(cli *client.Client, project string) (map[string][]types.Container, error) {
+	list, err := cli.ContainerList(context.Background(), types.ContainerListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("label", LABEL_PROJECT+"="+project)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	containers := map[string][]types.Container{}
+	for _, c := range list {
+		service := c.Labels[LABEL_SERVICE]
+		l, ok := containers[service]
+		if !ok {
+			l = []types.Container{c}
+		} else {
+			l = append(l, c)
+		}
+		containers[service] = l
+	}
+	return containers, nil
+}
+
+func doDown(project string, config *compose.Config) error {
 	return nil
 }
 
