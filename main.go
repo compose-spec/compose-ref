@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/docker/docker/api/types/strslice"
 	"io/ioutil"
 	"log"
 	"os"
@@ -13,7 +12,9 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-units"
 	"github.com/urfave/cli/v2"
 )
 
@@ -34,7 +35,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:        "file",
-				Aliases: []string{"f"},
+				Aliases:     []string{"f"},
 				Value:       "compose.yaml",
 				Usage:       "Load Compose file `FILE`",
 				Destination: &file,
@@ -42,9 +43,9 @@ func main() {
 		},
 		Commands: []*cli.Command{
 			{
-				Name:    "up",
-				Usage:   "Create and start application services",
-				Action:  func(c *cli.Context) error {
+				Name:  "up",
+				Usage: "Create and start application services",
+				Action: func(c *cli.Context) error {
 					config, err := load(file)
 					if err != nil {
 						return err
@@ -53,9 +54,9 @@ func main() {
 				},
 			},
 			{
-				Name:    "down",
-				Usage:   "Stop services created by `up`",
-				Action:  func(c *cli.Context) error {
+				Name:  "down",
+				Usage: "Stop services created by `up`",
+				Action: func(c *cli.Context) error {
 					config, err := load(file)
 					if err != nil {
 						return err
@@ -77,33 +78,69 @@ func doUp(config *compose.Config) error {
 	if err != nil {
 		return err
 	}
-	ctx := context.Background()
-	for _, s := range config.Services {
-		fmt.Printf("Creating container for service %s ... ", s.Name)
-		create, err := cli.ContainerCreate(ctx,
-			&container.Config{
-				Image: s.Image,
-				Cmd:   strslice.StrSlice(s.Command),
-				User:  s.User,
-				WorkingDir: s.WorkingDir,
-			},
-			&container.HostConfig{
-				Privileged: s.Privileged,
-			},
-			&network.NetworkingConfig{
+	return config.WithServices(nil, func(service compose.ServiceConfig) error {
+		return createService(cli, service)
+	})
+}
 
-			},
-			"")
+func createService(cli *client.Client, s compose.ServiceConfig) error {
+	ctx := context.Background()
+
+	var shmSize int64
+	if s.ShmSize != "" {
+		v, err := units.RAMInBytes(s.ShmSize)
 		if err != nil {
 			return err
 		}
-		err = cli.ContainerStart(ctx, create.ID, types.ContainerStartOptions{})
-		if err != nil {
-			return err
-		}
-		fmt.Println(create.ID)
+		shmSize = v
 	}
 
+	fmt.Printf("Creating container for service %s ... ", s.Name)
+	create, err := cli.ContainerCreate(ctx,
+		&container.Config{
+			Hostname:        s.Hostname,
+			Domainname:      s.DomainName,
+			User:            s.User,
+			Tty:             s.Tty,
+			OpenStdin:       s.StdinOpen,
+			Cmd:             strslice.StrSlice(s.Command),
+			Image:           s.Image,
+			WorkingDir:      s.WorkingDir,
+			Entrypoint:      strslice.StrSlice(s.Entrypoint),
+			NetworkDisabled: s.NetworkMode == "disabled",
+			MacAddress:      s.MacAddress,
+			StopSignal:      s.StopSignal,
+		},
+		&container.HostConfig{
+			NetworkMode:    container.NetworkMode(s.NetworkMode),
+			RestartPolicy:  container.RestartPolicy{Name: s.Restart},
+			CapAdd:         s.CapAdd,
+			CapDrop:        s.CapDrop,
+			DNS:            s.DNS,
+			DNSSearch:      s.DNSSearch,
+			ExtraHosts:     s.ExtraHosts,
+			IpcMode:        container.IpcMode(s.Ipc),
+			Links:          s.Links,
+			PidMode:        container.PidMode(s.Pid),
+			Privileged:     s.Privileged,
+			ReadonlyRootfs: s.ReadOnly,
+			SecurityOpt:    s.SecurityOpt,
+			UsernsMode:     container.UsernsMode(s.UserNSMode),
+			ShmSize:        shmSize,
+			Sysctls:        s.Sysctls,
+			Isolation:      container.Isolation(s.Isolation),
+			Init:           s.Init,
+		},
+		&network.NetworkingConfig{},
+		"")
+	if err != nil {
+		return err
+	}
+	err = cli.ContainerStart(ctx, create.ID, types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+	fmt.Println(create.ID)
 	return nil
 }
 
@@ -127,4 +164,3 @@ func load(file string) (*compose.Config, error) {
 		ConfigFiles: files,
 	})
 }
-

@@ -8,6 +8,12 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/docker/compose-go v0.0.0-20200128154038-f2d87307c80c h1:BZ/9ddOSYYqsI3sFKilnr6glmmnsoQD9i6Yr4UdAjSc=
 github.com/docker/compose-go v0.0.0-20200128154038-f2d87307c80c/go.mod h1:rNEGmKvQfOaLZwN2XXFsOdxRexU3/zpuE6fM9r0AVvU=
+github.com/docker/compose-go v0.0.0-20200129100513-fce6b0a4dab5 h1:IHITcu43dY5d63lI4B+84o8QEePDCoRZLTKcqlg8R4g=
+github.com/docker/compose-go v0.0.0-20200129100513-fce6b0a4dab5/go.mod h1:rNEGmKvQfOaLZwN2XXFsOdxRexU3/zpuE6fM9r0AVvU=
+github.com/docker/compose-go v0.0.0-20200129102951-6a63607ff75b h1:vcg9Y5+4Js+bqc73wgNjLkdWPNfuY9SEv+OYgxeVwzg=
+github.com/docker/compose-go v0.0.0-20200129102951-6a63607ff75b/go.mod h1:rNEGmKvQfOaLZwN2XXFsOdxRexU3/zpuE6fM9r0AVvU=
+github.com/docker/compose-go v0.0.0-20200129104823-c9173088774b h1:eH3LNpe+smictJVuTV+IWbjIoasYdf9gM4eyZKGw2AU=
+github.com/docker/compose-go v0.0.0-20200129104823-c9173088774b/go.mod h1:rNEGmKvQfOaLZwN2XXFsOdxRexU3/zpuE6fM9r0AVvU=
 github.com/docker/distribution v2.7.1+incompatible h1:a5mlkVzth6W5A4fOsS3D2EO5BUmsJpcB+cRlLU7cSug=
 github.com/docker/distribution v2.7.1+incompatible/go.mod h1:J2gT2udsDAN96Uj4KfcMRqY0/ypR+oyYUYmja8H+y+w=
 github.com/docker/docker v1.13.1 h1:IkZjBSIc8hBjLpqeAbeE5mca5mNgeatLHBy3GO78BWo=
