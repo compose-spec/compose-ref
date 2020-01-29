@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/docker/compose-go/loader"
 	compose "github.com/docker/compose-go/types"
@@ -28,6 +29,7 @@ const banner = `
 func main() {
 	fmt.Println(banner)
 	var file string
+	var project string
 
 	app := &cli.App{
 		Name:  "kraken",
@@ -40,6 +42,13 @@ func main() {
 				Usage:       "Load Compose file `FILE`",
 				Destination: &file,
 			},
+			&cli.StringFlag{
+				Name:        "project-name",
+				Aliases:     []string{"n"},
+				Value:       "",
+				Usage:       "Set project name `NAME` (default: Compose file's folder name)",
+				Destination: &project,
+			},
 		},
 		Commands: []*cli.Command{
 			{
@@ -50,7 +59,15 @@ func main() {
 					if err != nil {
 						return err
 					}
-					return doUp(config)
+					if project == "" {
+						abs, err := filepath.Abs(file)
+						if err != nil {
+							return err
+						}
+						project = filepath.Base(filepath.Dir(abs))
+					}
+
+					return doUp(project, config)
 				},
 			},
 			{
@@ -73,17 +90,17 @@ func main() {
 	}
 }
 
-func doUp(config *compose.Config) error {
+func doUp(project string, config *compose.Config) error {
 	cli, err := client.NewEnvClient()
 	if err != nil {
 		return err
 	}
 	return config.WithServices(nil, func(service compose.ServiceConfig) error {
-		return createService(cli, service)
+		return createService(cli, project, service)
 	})
 }
 
-func createService(cli *client.Client, s compose.ServiceConfig) error {
+func createService(cli *client.Client, project string, s compose.ServiceConfig) error {
 	ctx := context.Background()
 
 	var shmSize int64
@@ -95,6 +112,13 @@ func createService(cli *client.Client, s compose.ServiceConfig) error {
 		shmSize = v
 	}
 
+	labels := map[string]string{}
+	for k,v := range s.Labels {
+		labels[k] = v
+	}
+	labels[LABEL_PROJECT] = project
+	labels[LABEL_SERVICE] = s.Name
+
 	fmt.Printf("Creating container for service %s ... ", s.Name)
 	create, err := cli.ContainerCreate(ctx,
 		&container.Config{
@@ -105,6 +129,7 @@ func createService(cli *client.Client, s compose.ServiceConfig) error {
 			OpenStdin:       s.StdinOpen,
 			Cmd:             strslice.StrSlice(s.Command),
 			Image:           s.Image,
+			Labels:          labels,
 			WorkingDir:      s.WorkingDir,
 			Entrypoint:      strslice.StrSlice(s.Entrypoint),
 			NetworkDisabled: s.NetworkMode == "disabled",
@@ -164,3 +189,11 @@ func load(file string) (*compose.Config, error) {
 		ConfigFiles: files,
 	})
 }
+
+const (
+	LABEL_NAMESPACE        = "io.compose-spec"
+	LABEL_SERVICE          = LABEL_NAMESPACE + ".service"
+	LABEL_NETWORK          = LABEL_NAMESPACE + ".network"
+	LABEL_VOLUME           = LABEL_NAMESPACE + ".volume"
+	LABEL_PROJECT          = LABEL_NAMESPACE + ".project"
+)
