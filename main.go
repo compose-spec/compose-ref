@@ -33,7 +33,7 @@ func main() {
 	var project string
 
 	app := &cli.App{
-		Name:  "kraken",
+		Name:  "compose-ref",
 		Usage: "Reference Compose Specification implementation",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
