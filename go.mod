@@ -1,9 +1,9 @@
-module github.com/compose-ref/kraken
+module github.com/compose-spec/compose-ref
 
 require (
 	github.com/Microsoft/go-winio v0.4.14 // indirect
+	github.com/compose-spec/compose-go v0.0.0-20200131085702-0b38cc2d8e6b
 	github.com/containerd/containerd v1.3.2 // indirect
-	github.com/docker/compose-go v0.0.0-20200129104823-c9173088774b
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/docker v1.4.2-0.20200128034134-2ebaeef943cc
 	github.com/docker/go-units v0.4.0
