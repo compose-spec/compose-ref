@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/docker/docker/api/types/filters"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"os"
@@ -108,7 +109,53 @@ func doUp(project string, config *compose.Config) error {
 	if err != nil {
 		return err
 	}
+
+	observedState, err := collectContainers(cli, project)
+	if err != nil {
+		return err
+	}
+
 	return config.WithServices(nil, func(service compose.ServiceConfig) error {
+		containers := observedState[service.Name]
+
+		// If no container is set for the service yet, then we just need to create them
+		if len(containers) == 0 {
+			return createService(cli, project, service)
+		}
+
+		// We compare container config stored as plain yaml in a label with expected one
+		b, err := yaml.Marshal(service)
+		if err != nil {
+			return err
+		}
+		expected := string(b)
+
+		diverged := false
+		for _, container := range containers {
+			config := container.Labels[LABEL_CONFIG]
+			if config != expected {
+				diverged = true
+				break
+			}
+		}
+
+		if !diverged {
+			// Existing containers are up-to-date with the Compose file configuration, so just keep them running
+			return nil
+		}
+
+		// Some container exist for service but with an obsolete configuration. We need to replace them
+		ctx := context.Background()
+		for _,c := range containers {
+			err := cli.ContainerStop(ctx, c.ID, nil)
+			if err != nil {
+				return err
+			}
+			err = cli.ContainerRemove(ctx, c.ID, types.ContainerRemoveOptions{})
+			if err != nil {
+				return err
+			}
+		}
 		return createService(cli, project, service)
 	})
 }
@@ -131,6 +178,12 @@ func createService(cli *client.Client, project string, s compose.ServiceConfig) 
 	}
 	labels[LABEL_PROJECT] = project
 	labels[LABEL_SERVICE] = s.Name
+
+	b, err := yaml.Marshal(s)
+	if err != nil {
+		return err
+	}
+	labels[LABEL_CONFIG] = string(b)
 
 	fmt.Printf("Creating container for service %s ... ", s.Name)
 	create, err := cli.ContainerCreate(ctx,
@@ -231,4 +284,5 @@ const (
 	LABEL_NETWORK          = LABEL_NAMESPACE + ".network"
 	LABEL_VOLUME           = LABEL_NAMESPACE + ".volume"
 	LABEL_PROJECT          = LABEL_NAMESPACE + ".project"
+	LABEL_CONFIG          = LABEL_NAMESPACE + ".config"
 )
