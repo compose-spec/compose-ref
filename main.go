@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/docker/docker/api/types/filters"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/docker/docker/api/types/filters"
+	"gopkg.in/yaml.v2"
 
 	"github.com/compose-spec/compose-go/loader"
 	compose "github.com/compose-spec/compose-go/types"
@@ -117,6 +118,7 @@ func doUp(project string, config *compose.Config) error {
 
 	return config.WithServices(nil, func(service compose.ServiceConfig) error {
 		containers := observedState[service.Name]
+		delete(observedState, service.Name)
 
 		// If no container is set for the service yet, then we just need to create them
 		if len(containers) == 0 {
@@ -145,19 +147,35 @@ func doUp(project string, config *compose.Config) error {
 		}
 
 		// Some container exist for service but with an obsolete configuration. We need to replace them
-		ctx := context.Background()
-		for _,c := range containers {
-			err := cli.ContainerStop(ctx, c.ID, nil)
-			if err != nil {
-				return err
-			}
-			err = cli.ContainerRemove(ctx, c.ID, types.ContainerRemoveOptions{})
-			if err != nil {
-				return err
-			}
+		err = removeContainers(cli, containers)
+		if err != nil {
+			return err
 		}
 		return createService(cli, project, service)
 	})
+
+	// Remaining containers in observed state don't have a matching service in Compose file => orphaned to be removed
+	for _, orphaned := range observedState {
+		err = removeContainers(cli, orphaned)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func removeContainers(cli *client.Client, containers []types.Container) error {
+	ctx := context.Background()
+	for _, c := range containers {
+		err := cli.ContainerStop(ctx, c.ID, nil)
+		if err != nil {
+			return err
+		}
+		err = cli.ContainerRemove(ctx, c.ID, types.ContainerRemoveOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func createService(cli *client.Client, project string, s compose.ServiceConfig) error {
@@ -173,7 +191,7 @@ func createService(cli *client.Client, project string, s compose.ServiceConfig) 
 	}
 
 	labels := map[string]string{}
-	for k,v := range s.Labels {
+	for k, v := range s.Labels {
 		labels[k] = v
 	}
 	labels[LABEL_PROJECT] = project
@@ -279,10 +297,10 @@ func load(file string) (*compose.Config, error) {
 }
 
 const (
-	LABEL_NAMESPACE        = "io.compose-spec"
-	LABEL_SERVICE          = LABEL_NAMESPACE + ".service"
-	LABEL_NETWORK          = LABEL_NAMESPACE + ".network"
-	LABEL_VOLUME           = LABEL_NAMESPACE + ".volume"
-	LABEL_PROJECT          = LABEL_NAMESPACE + ".project"
-	LABEL_CONFIG          = LABEL_NAMESPACE + ".config"
+	LABEL_NAMESPACE = "io.compose-spec"
+	LABEL_SERVICE   = LABEL_NAMESPACE + ".service"
+	LABEL_NETWORK   = LABEL_NAMESPACE + ".network"
+	LABEL_VOLUME    = LABEL_NAMESPACE + ".volume"
+	LABEL_PROJECT   = LABEL_NAMESPACE + ".project"
+	LABEL_CONFIG    = LABEL_NAMESPACE + ".config"
 )
