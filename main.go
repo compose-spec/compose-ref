@@ -105,8 +105,17 @@ func getProject(project string, file string) (string, error) {
 	return project, nil
 }
 
-func doUp(project string, config *compose.Config) error {
+func getClient() (*client.Client, error) {
 	cli, err := client.NewEnvClient()
+	if err != nil {
+		return nil, err
+	}
+	cli.NegotiateAPIVersion(context.Background())
+	return cli, nil
+}
+
+func doUp(project string, config *compose.Config) error {
+	cli, err := getClient()
 	if err != nil {
 		return err
 	}
@@ -116,7 +125,7 @@ func doUp(project string, config *compose.Config) error {
 		return err
 	}
 
-	return config.WithServices(nil, func(service compose.ServiceConfig) error {
+	err = config.WithServices(nil, func(service compose.ServiceConfig) error {
 		containers := observedState[service.Name]
 		delete(observedState, service.Name)
 
@@ -154,6 +163,10 @@ func doUp(project string, config *compose.Config) error {
 		return createService(cli, project, service)
 	})
 
+	if err != nil {
+	    return err
+	}
+
 	// Remaining containers in observed state don't have a matching service in Compose file => orphaned to be removed
 	for _, orphaned := range observedState {
 		err = removeContainers(cli, orphaned)
@@ -161,6 +174,7 @@ func doUp(project string, config *compose.Config) error {
 			return err
 		}
 	}
+	return nil
 }
 
 func removeContainers(cli *client.Client, containers []types.Container) error {
@@ -275,7 +289,64 @@ func collectContainers(cli *client.Client, project string) (map[string][]types.C
 	return containers, nil
 }
 
+func collectNetworks(cli *client.Client, project string) (map[string][]types.NetworkResource, error) {
+	list, err := cli.NetworkList(context.Background(), types.NetworkListOptions{
+		Filters: filters.NewArgs(filters.Arg("label", LABEL_PROJECT+"="+project)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	networks := map[string][]types.NetworkResource{}
+	for _, r := range list {
+		resource := r.Labels[LABEL_NETWORK]
+		l, ok := networks[resource]
+		if !ok {
+			l = []types.NetworkResource{r}
+		} else {
+			l = append(l, r)
+		}
+		networks[resource] = l
+
+	}
+	return networks, nil
+}
+
 func doDown(project string, config *compose.Config) error {
+	cli, err := getClient()
+	err = destroyServices(cli, project)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func destroyServices(cli *client.Client, project string) error {
+	containers, err := collectContainers(cli, project)
+	if err != nil {
+		return err
+	}
+
+	for serviceName, replicaList := range containers {
+		err = destroyContainers(cli, replicaList, serviceName)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func destroyContainers(cli *client.Client, replicas []types.Container, serviceName string) error {
+	for _, replica := range replicas {
+		fmt.Printf("Deleting container for service %s ... ", serviceName)
+		err := cli.ContainerRemove(context.Background(), replica.ID, types.ContainerRemoveOptions{
+			Force: true,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println(replica.ID)
+	}
 	return nil
 }
 
