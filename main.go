@@ -180,6 +180,9 @@ func doUp(project string, config *compose.Config) error {
 func removeContainers(cli *client.Client, containers []types.Container) error {
 	ctx := context.Background()
 	for _, c := range containers {
+		if serviceName, ok:= c.Labels[LABEL_SERVICE]; ok {
+			fmt.Printf("Stopping container for service %s ... ", serviceName)
+		}
 		err := cli.ContainerStop(ctx, c.ID, nil)
 		if err != nil {
 			return err
@@ -188,6 +191,7 @@ func removeContainers(cli *client.Client, containers []types.Container) error {
 		if err != nil {
 			return err
 		}
+		fmt.Println(c.ID)
 	}
 	return nil
 }
@@ -313,7 +317,7 @@ func collectNetworks(cli *client.Client, project string) (map[string][]types.Net
 
 func doDown(project string, config *compose.Config) error {
 	cli, err := getClient()
-	err = destroyServices(cli, project)
+	err = removeServices(cli, project)
 	if err != nil {
 		return err
 	}
@@ -322,14 +326,14 @@ func doDown(project string, config *compose.Config) error {
 	return nil
 }
 
-func destroyServices(cli *client.Client, project string) error {
+func removeServices(cli *client.Client, project string) error {
 	containers, err := collectContainers(cli, project)
 	if err != nil {
 		return err
 	}
 
-	for serviceName, replicaList := range containers {
-		err = destroyContainers(cli, replicaList, serviceName)
+	for _, replicaList := range containers {
+		err = removeContainers(cli, replicaList)
 		if err != nil {
 			return err
 		}
@@ -351,19 +355,6 @@ func destroyNetworks(cli *client.Client, project string) error {
 	return nil
 }
 
-func destroyContainers(cli *client.Client, replicas []types.Container, serviceName string) error {
-	for _, replica := range replicas {
-		fmt.Printf("Deleting container for service %s ... ", serviceName)
-		err := cli.ContainerRemove(context.Background(), replica.ID, types.ContainerRemoveOptions{
-			Force: true,
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Println(replica.ID)
-	}
-	return nil
-}
 
 func destroyNetwork(cli *client.Client, networkResources []types.NetworkResource, networkName string) error {
 	for _, networkResource := range networkResources {
