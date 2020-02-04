@@ -107,7 +107,7 @@ func getProject(project string, file string) (string, error) {
 }
 
 func getClient() (*client.Client, error) {
-	cli, err := client.NewEnvClient()
+	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return nil, err
 	}
