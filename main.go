@@ -318,6 +318,7 @@ func doDown(project string, config *compose.Config) error {
 		return err
 	}
 
+	err = destroyNetworks(cli, project)
 	return nil
 }
 
@@ -336,6 +337,20 @@ func destroyServices(cli *client.Client, project string) error {
 	return nil
 }
 
+func destroyNetworks(cli *client.Client, project string) error {
+	networks, err := collectNetworks(cli, project)
+	if err != nil {
+		return err
+	}
+	for networkName, resource := range networks {
+		err = destroyNetwork(cli, resource, networkName)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func destroyContainers(cli *client.Client, replicas []types.Container, serviceName string) error {
 	for _, replica := range replicas {
 		fmt.Printf("Deleting container for service %s ... ", serviceName)
@@ -346,6 +361,18 @@ func destroyContainers(cli *client.Client, replicas []types.Container, serviceNa
 			return err
 		}
 		fmt.Println(replica.ID)
+	}
+	return nil
+}
+
+func destroyNetwork(cli *client.Client, networkResources []types.NetworkResource, networkName string) error {
+	for _, networkResource := range networkResources {
+		fmt.Printf("Deleting network %s ... ", networkName)
+		err := cli.NetworkRemove(context.Background(), networkResource.ID)
+		if err != nil {
+			return err
+		}
+		fmt.Println(networkResource.Name)
 	}
 	return nil
 }
