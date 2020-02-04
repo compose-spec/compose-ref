@@ -14,7 +14,7 @@ fmt: ## Format go files
 
 .PHONY: lint
 lint: ## Verify Go files
-	golint ./...
+	golangci-lint run --config ./golangci.yml ./
 
 .PHONY: setup
 setup: ## Setup the precommit hook
