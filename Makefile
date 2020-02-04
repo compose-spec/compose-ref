@@ -10,11 +10,7 @@ test: ## Run tests
 
 .PHONY: fmt
 fmt: ## Format go files
-	go fmt -w ./...
-
-.PHONY: imports
-imports: ## Format go files
-	goimports -w ./...
+	@goimports -e -w ./
 
 .PHONY: lint
 lint: ## Verify Go files
