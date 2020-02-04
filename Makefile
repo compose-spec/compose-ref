@@ -16,6 +16,10 @@ fmt: ## Format go files
 imports: ## Format go files
 	goimports -w ./...
 
+.PHONY: lint
+lint: ## Verify Go files
+	golint ./...
+
 .PHONY: setup
 setup: ## Setup the precommit hook
 	@which pre-commit > /dev/null 2>&1 || (echo "pre-commit not installed see README." && false)
