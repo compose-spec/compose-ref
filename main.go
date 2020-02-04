@@ -20,7 +20,7 @@ import (
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-units"
-	"github.com/urfave/cli/v2"
+	commandLine "github.com/urfave/cli/v2"
 )
 
 const banner = `
@@ -28,25 +28,26 @@ const banner = `
 (     )
  )@ @(
 //|||\\
+
 `
 
 func main() {
-	fmt.Println(banner)
+	fmt.Print(banner)
 	var file string
 	var project string
 
-	app := &cli.App{
+	app := &commandLine.App{
 		Name:  "compose-ref",
 		Usage: "Reference Compose Specification implementation",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
+		Flags: []commandLine.Flag{
+			&commandLine.StringFlag{
 				Name:        "file",
 				Aliases:     []string{"f"},
 				Value:       "compose.yaml",
 				Usage:       "Load Compose file `FILE`",
 				Destination: &file,
 			},
-			&cli.StringFlag{
+			&commandLine.StringFlag{
 				Name:        "project-name",
 				Aliases:     []string{"n"},
 				Value:       "",
@@ -54,11 +55,11 @@ func main() {
 				Destination: &project,
 			},
 		},
-		Commands: []*cli.Command{
+		Commands: []*commandLine.Command{
 			{
 				Name:  "up",
 				Usage: "Create and start application services",
-				Action: func(c *cli.Context) error {
+				Action: func(c *commandLine.Context) error {
 					config, err := load(file)
 					if err != nil {
 						return err
@@ -74,7 +75,7 @@ func main() {
 			{
 				Name:  "down",
 				Usage: "Stop services created by `up`",
-				Action: func(c *cli.Context) error {
+				Action: func(c *commandLine.Context) error {
 					config, err := load(file)
 					if err != nil {
 						return err
@@ -150,8 +151,8 @@ func doUp(project string, config *compose.Config) error {
 		expected := string(b)
 
 		diverged := false
-		for _, container := range containers {
-			config := container.Labels[labelConfig]
+		for _, cntr := range containers {
+			config := cntr.Labels[labelConfig]
 			if config != expected {
 				diverged = true
 				break
@@ -384,13 +385,15 @@ func collectNetworks(cli *client.Client, project string) (map[string][]types.Net
 
 func doDown(project string, config *compose.Config) error {
 	cli, err := getClient()
+	if err != nil {
+		return nil
+	}
 	err = removeServices(cli, project)
 	if err != nil {
 		return err
 	}
 
-	err = destroyNetworks(cli, project)
-	return nil
+	return destroyNetworks(cli, project)
 }
 
 func removeServices(cli *client.Client, project string) error {
