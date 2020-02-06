@@ -8,18 +8,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/docker/docker/api/types/filters"
-	"gopkg.in/yaml.v2"
-
 	"github.com/compose-spec/compose-go/loader"
 	compose "github.com/compose-spec/compose-go/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-units"
 	"github.com/urfave/cli/v2"
+	"gopkg.in/yaml.v2"
 )
 
 const banner = `
@@ -106,7 +105,7 @@ func getProject(project string, file string) (string, error) {
 }
 
 func getClient() (*client.Client, error) {
-	cli, err := client.NewEnvClient()
+	cli, err := client.NewClientWithOpts()
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +163,7 @@ func doUp(project string, config *compose.Config) error {
 	})
 
 	if err != nil {
-	    return err
+		return err
 	}
 
 	// Remaining containers in observed state don't have a matching service in Compose file => orphaned to be removed
@@ -180,7 +179,7 @@ func doUp(project string, config *compose.Config) error {
 func removeContainers(cli *client.Client, containers []types.Container) error {
 	ctx := context.Background()
 	for _, c := range containers {
-		if serviceName, ok:= c.Labels[LABEL_SERVICE]; ok {
+		if serviceName, ok := c.Labels[LABEL_SERVICE]; ok {
 			fmt.Printf("Stopping container for service %s ... ", serviceName)
 		}
 		err := cli.ContainerStop(ctx, c.ID, nil)
@@ -317,13 +316,15 @@ func collectNetworks(cli *client.Client, project string) (map[string][]types.Net
 
 func doDown(project string, config *compose.Config) error {
 	cli, err := getClient()
+	if err != nil {
+		return err
+	}
 	err = removeServices(cli, project)
 	if err != nil {
 		return err
 	}
 
-	err = destroyNetworks(cli, project)
-	return nil
+	return destroyNetworks(cli, project)
 }
 
 func removeServices(cli *client.Client, project string) error {
@@ -354,7 +355,6 @@ func destroyNetworks(cli *client.Client, project string) error {
 	}
 	return nil
 }
-
 
 func destroyNetwork(cli *client.Client, networkResources []types.NetworkResource, networkName string) error {
 	for _, networkResource := range networkResources {
