@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/errdefs"
 	"gopkg.in/yaml.v2"
 
 	"github.com/compose-spec/compose-go/loader"
@@ -120,6 +121,13 @@ func doUp(project string, config *compose.Config) error {
 		return err
 	}
 
+	for defaultNetworkName, networkConfig := range config.Networks {
+		err = createNetwork(cli, project, defaultNetworkName, networkConfig)
+		if err != nil {
+			return err
+		}
+	}
+
 	observedState, err := collectContainers(cli, project)
 	if err != nil {
 		return err
@@ -164,7 +172,7 @@ func doUp(project string, config *compose.Config) error {
 	})
 
 	if err != nil {
-	    return err
+		return err
 	}
 
 	// Remaining containers in observed state don't have a matching service in Compose file => orphaned to be removed
@@ -180,7 +188,7 @@ func doUp(project string, config *compose.Config) error {
 func removeContainers(cli *client.Client, containers []types.Container) error {
 	ctx := context.Background()
 	for _, c := range containers {
-		if serviceName, ok:= c.Labels[LABEL_SERVICE]; ok {
+		if serviceName, ok := c.Labels[LABEL_SERVICE]; ok {
 			fmt.Printf("Stopping container for service %s ... ", serviceName)
 		}
 		err := cli.ContainerStop(ctx, c.ID, nil)
@@ -271,6 +279,65 @@ func createService(cli *client.Client, project string, s compose.ServiceConfig) 
 	return nil
 }
 
+func createNetwork(cli *client.Client, project string, networkDefaultName string, netConfig compose.NetworkConfig) error {
+	name := networkDefaultName
+	if netConfig.Name != "" {
+		name = netConfig.Name
+	}
+	createOptions := types.NetworkCreate{
+		Driver:     netConfig.Driver,
+		Internal:   netConfig.Internal,
+		Attachable: netConfig.Attachable,
+		Options:    netConfig.DriverOpts,
+		Labels:     netConfig.Labels,
+	}
+	if createOptions.Driver == "" {
+		createOptions.Driver = "bridge" //default driver
+	}
+	if createOptions.Labels == nil {
+		createOptions.Labels = map[string]string{}
+	}
+	createOptions.Labels[LABEL_PROJECT] = project
+	createOptions.Labels[LABEL_NETWORK] = name
+
+	if netConfig.External.External {
+		_, err := cli.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
+		fmt.Printf("Network %s declared as external. No new network will be created.\n", name)
+		if errdefs.IsNotFound(err) {
+			return fmt.Errorf("Network %s declared as external, but could not be found. "+
+				"Please create the network manually using `docker network create %s` and try again",
+				name, name)
+		}
+	}
+
+	_, err := cli.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			if netConfig.Ipam.Driver != "" || len(netConfig.Ipam.Config) > 0 {
+				createOptions.IPAM = &network.IPAM{}
+
+				if netConfig.Ipam.Driver != "" {
+					createOptions.IPAM.Driver = netConfig.Ipam.Driver
+				}
+
+				for _, ipamConfig := range netConfig.Ipam.Config {
+					config := network.IPAMConfig{
+						Subnet: ipamConfig.Subnet,
+					}
+					createOptions.IPAM.Config = append(createOptions.IPAM.Config, config)
+				}
+			}
+			if _, err := cli.NetworkCreate(context.Background(), name, createOptions); err != nil {
+				return fmt.Errorf("failed to create network %s: %w", name, err)
+			}
+		} else {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func collectContainers(cli *client.Client, project string) (map[string][]types.Container, error) {
 	list, err := cli.ContainerList(context.Background(), types.ContainerListOptions{
 		All:     true,
@@ -354,7 +421,6 @@ func destroyNetworks(cli *client.Client, project string) error {
 	}
 	return nil
 }
-
 
 func destroyNetwork(cli *client.Client, networkResources []types.NetworkResource, networkName string) error {
 	for _, networkResource := range networkResources {
