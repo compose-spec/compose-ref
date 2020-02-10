@@ -107,28 +107,28 @@ func getProject(project string, file string) (string, error) {
 }
 
 func getClient() (*client.Client, error) {
-	cli, err := client.NewEnvClient()
+	clt, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return nil, err
 	}
-	cli.NegotiateAPIVersion(context.Background())
-	return cli, nil
+	clt.NegotiateAPIVersion(context.Background())
+	return clt, nil
 }
 
 func doUp(project string, config *compose.Config) error {
-	cli, err := getClient()
+	clt, err := getClient()
 	if err != nil {
 		return err
 	}
 
 	for defaultNetworkName, networkConfig := range config.Networks {
-		err = createNetwork(cli, project, defaultNetworkName, networkConfig)
+		err = createNetwork(clt, project, defaultNetworkName, networkConfig)
 		if err != nil {
 			return err
 		}
 	}
 
-	observedState, err := collectContainers(cli, project)
+	observedState, err := collectContainers(clt, project)
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func doUp(project string, config *compose.Config) error {
 
 		// If no container is set for the service yet, then we just need to create them
 		if len(containers) == 0 {
-			return createService(cli, project, service)
+			return createService(clt, project, service)
 		}
 
 		// We compare container config stored as plain yaml in a label with expected one
@@ -150,8 +150,8 @@ func doUp(project string, config *compose.Config) error {
 		expected := string(b)
 
 		diverged := false
-		for _, container := range containers {
-			config := container.Labels[LABEL_CONFIG]
+		for _, c := range containers {
+			config := c.Labels[LabelConfig]
 			if config != expected {
 				diverged = true
 				break
@@ -163,12 +163,12 @@ func doUp(project string, config *compose.Config) error {
 			return nil
 		}
 
-		// Some container exist for service but with an obsolete configuration. We need to replace them
-		err = removeContainers(cli, containers)
+		// Some containers exist for service but with an obsolete configuration. We need to replace them
+		err = removeContainers(clt, containers)
 		if err != nil {
 			return err
 		}
-		return createService(cli, project, service)
+		return createService(clt, project, service)
 	})
 
 	if err != nil {
@@ -177,7 +177,7 @@ func doUp(project string, config *compose.Config) error {
 
 	// Remaining containers in observed state don't have a matching service in Compose file => orphaned to be removed
 	for _, orphaned := range observedState {
-		err = removeContainers(cli, orphaned)
+		err = removeContainers(clt, orphaned)
 		if err != nil {
 			return err
 		}
@@ -188,8 +188,8 @@ func doUp(project string, config *compose.Config) error {
 func removeContainers(cli *client.Client, containers []types.Container) error {
 	ctx := context.Background()
 	for _, c := range containers {
-		if serviceName, ok := c.Labels[LABEL_SERVICE]; ok {
-			fmt.Printf("Stopping container for service %s ... ", serviceName)
+		if serviceName, ok := c.Labels[LabelService]; ok {
+			fmt.Printf("Stopping container for service %s ...", serviceName)
 		}
 		err := cli.ContainerStop(ctx, c.ID, nil)
 		if err != nil {
@@ -220,14 +220,14 @@ func createService(cli *client.Client, project string, s compose.ServiceConfig) 
 	for k, v := range s.Labels {
 		labels[k] = v
 	}
-	labels[LABEL_PROJECT] = project
-	labels[LABEL_SERVICE] = s.Name
+	labels[LabelProject] = project
+	labels[LabelService] = s.Name
 
 	b, err := yaml.Marshal(s)
 	if err != nil {
 		return err
 	}
-	labels[LABEL_CONFIG] = string(b)
+	labels[LabelConfig] = string(b)
 
 	fmt.Printf("Creating container for service %s ... ", s.Name)
 	create, err := cli.ContainerCreate(ctx,
@@ -297,8 +297,8 @@ func createNetwork(cli *client.Client, project string, networkDefaultName string
 	if createOptions.Labels == nil {
 		createOptions.Labels = map[string]string{}
 	}
-	createOptions.Labels[LABEL_PROJECT] = project
-	createOptions.Labels[LABEL_NETWORK] = name
+	createOptions.Labels[LabelProject] = project
+	createOptions.Labels[LabelNetwork] = name
 
 	if netConfig.External.External {
 		_, err := cli.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
@@ -341,14 +341,14 @@ func createNetwork(cli *client.Client, project string, networkDefaultName string
 func collectContainers(cli *client.Client, project string) (map[string][]types.Container, error) {
 	list, err := cli.ContainerList(context.Background(), types.ContainerListOptions{
 		All:     true,
-		Filters: filters.NewArgs(filters.Arg("label", LABEL_PROJECT+"="+project)),
+		Filters: filters.NewArgs(filters.Arg("label", LabelProject+"="+project)),
 	})
 	if err != nil {
 		return nil, err
 	}
 	containers := map[string][]types.Container{}
 	for _, c := range list {
-		service := c.Labels[LABEL_SERVICE]
+		service := c.Labels[LabelService]
 		l, ok := containers[service]
 		if !ok {
 			l = []types.Container{c}
@@ -362,14 +362,14 @@ func collectContainers(cli *client.Client, project string) (map[string][]types.C
 
 func collectNetworks(cli *client.Client, project string) (map[string][]types.NetworkResource, error) {
 	list, err := cli.NetworkList(context.Background(), types.NetworkListOptions{
-		Filters: filters.NewArgs(filters.Arg("label", LABEL_PROJECT+"="+project)),
+		Filters: filters.NewArgs(filters.Arg("label", LabelProject+"="+project)),
 	})
 	if err != nil {
 		return nil, err
 	}
 	networks := map[string][]types.NetworkResource{}
 	for _, r := range list {
-		resource := r.Labels[LABEL_NETWORK]
+		resource := r.Labels[LabelNetwork]
 		l, ok := networks[resource]
 		if !ok {
 			l = []types.NetworkResource{r}
@@ -383,24 +383,29 @@ func collectNetworks(cli *client.Client, project string) (map[string][]types.Net
 }
 
 func doDown(project string, config *compose.Config) error {
-	cli, err := getClient()
-	err = removeServices(cli, project)
+	c, err := getClient()
 	if err != nil {
 		return err
 	}
-
-	err = destroyNetworks(cli, project)
+	err = removeServices(c, project)
+	if err != nil {
+		return err
+	}
+	err = destroyNetworks(c, project)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-func removeServices(cli *client.Client, project string) error {
-	containers, err := collectContainers(cli, project)
+func removeServices(clt *client.Client, project string) error {
+	containers, err := collectContainers(clt, project)
 	if err != nil {
 		return err
 	}
 
 	for _, replicaList := range containers {
-		err = removeContainers(cli, replicaList)
+		err = removeContainers(clt, replicaList)
 		if err != nil {
 			return err
 		}
@@ -408,13 +413,13 @@ func removeServices(cli *client.Client, project string) error {
 	return nil
 }
 
-func destroyNetworks(cli *client.Client, project string) error {
-	networks, err := collectNetworks(cli, project)
+func destroyNetworks(clt *client.Client, project string) error {
+	networks, err := collectNetworks(clt, project)
 	if err != nil {
 		return err
 	}
 	for networkName, resource := range networks {
-		err = destroyNetwork(cli, resource, networkName)
+		err = destroyNetwork(clt, resource, networkName)
 		if err != nil {
 			return err
 		}
@@ -443,7 +448,7 @@ func load(file string) (*compose.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	files := []compose.ConfigFile{}
+	var files []compose.ConfigFile
 	files = append(files, compose.ConfigFile{Filename: file, Config: config})
 	return loader.Load(compose.ConfigDetails{
 		WorkingDir:  ".",
@@ -452,10 +457,10 @@ func load(file string) (*compose.Config, error) {
 }
 
 const (
-	LABEL_NAMESPACE = "io.compose-spec"
-	LABEL_SERVICE   = LABEL_NAMESPACE + ".service"
-	LABEL_NETWORK   = LABEL_NAMESPACE + ".network"
-	LABEL_VOLUME    = LABEL_NAMESPACE + ".volume"
-	LABEL_PROJECT   = LABEL_NAMESPACE + ".project"
-	LABEL_CONFIG    = LABEL_NAMESPACE + ".config"
+	LabelNamespace = "io.compose-spec"
+	LabelService   = LabelNamespace + ".service"
+	LabelNetwork   = LabelNamespace + ".network"
+	LabelProject   = LabelNamespace + ".project"
+	LabelConfig    = LabelNamespace + ".config"
+	//LabelVolume    = LabelNamespace + ".volume"
 )
