@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/errdefs"
@@ -18,6 +19,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-units"
 	commandLine "github.com/urfave/cli/v2"
@@ -124,6 +126,13 @@ func doUp(project string, config *compose.Config) error {
 
 	for defaultNetworkName, networkConfig := range config.Networks {
 		err = createNetwork(cli, project, defaultNetworkName, networkConfig)
+		if err != nil {
+			return err
+		}
+	}
+
+	for defaultVolumeName, volumeConfig := range config.Volumes {
+		err = createVolume(cli, project, defaultVolumeName, volumeConfig)
 		if err != nil {
 			return err
 		}
@@ -339,6 +348,47 @@ func createNetwork(cli *client.Client, project string, networkDefaultName string
 	return nil
 }
 
+func createVolume(cli *client.Client, project string, volumeDefaultName string, volumeConfig compose.VolumeConfig) error {
+	name := volumeDefaultName
+	if volumeConfig.Name != "" {
+		name = volumeConfig.Name
+	}
+	volumeID := fmt.Sprintf("%s_%s", strings.Trim(project, "-_"), name)
+
+	ctx := context.Background()
+
+	// If volume already exists, return here
+	if volumeConfig.External.Name != "" {
+		fmt.Printf("Volume %s declared as external. No new volume will be created.\n", name)
+	}
+	_, err := cli.VolumeInspect(ctx, volumeID)
+	if err == nil {
+		return nil
+	}
+	if !errdefs.IsNotFound(err) {
+		return err
+	}
+
+	// If volume is marked as external but doesn't already exist then return an error
+	if volumeConfig.External.Name != "" {
+		return fmt.Errorf("Volume %s declared as external, but could not be found. "+
+			"Please create the volume manually using `docker volume create --name=%s` and try again.\n", name, name)
+	}
+
+	fmt.Printf("Creating volume %q with %s driver\n", name, volumeConfig.Driver)
+	_, err = cli.VolumeCreate(ctx, volume.VolumeCreateBody{
+		Name:       volumeID,
+		Driver:     volumeConfig.Driver,
+		DriverOpts: volumeConfig.DriverOpts,
+		Labels: map[string]string{
+			labelProject: project,
+			labelVolume:  name,
+		},
+	})
+
+	return err
+}
+
 func collectContainers(cli *client.Client, project string) (map[string][]types.Container, error) {
 	containerList, err := cli.ContainerList(context.Background(), types.ContainerListOptions{
 		All:     true,
@@ -383,6 +433,26 @@ func collectNetworks(cli *client.Client, project string) (map[string][]types.Net
 	return networks, nil
 }
 
+func collectVolumes(cli *client.Client, project string) (map[string][]types.Volume, error) {
+	filter := filters.NewArgs(filters.Arg("label", labelProject+"="+project))
+	list, err := cli.VolumeList(context.Background(), filter)
+	if err != nil {
+		return nil, err
+	}
+	volumes := map[string][]types.Volume{}
+	for _, v := range list.Volumes {
+		resource := v.Labels[labelVolume]
+		l, ok := volumes[resource]
+		if !ok {
+			l = []types.Volume{*v}
+		} else {
+			l = append(l, *v)
+		}
+		volumes[resource] = l
+	}
+	return volumes, nil
+}
+
 func doDown(project string, config *compose.Config) error {
 	cli, err := getClient()
 	if err != nil {
@@ -392,8 +462,15 @@ func doDown(project string, config *compose.Config) error {
 	if err != nil {
 		return err
 	}
-
-	return destroyNetworks(cli, project)
+	err = destroyVolumes(cli, project)
+	if err != nil {
+		return err
+	}
+	err = destroyNetworks(cli, project)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func removeServices(cli *client.Client, project string) error {
@@ -433,6 +510,33 @@ func destroyNetwork(cli *client.Client, networkResources []types.NetworkResource
 			return err
 		}
 		fmt.Println(networkResource.Name)
+	}
+	return nil
+}
+
+func destroyVolumes(cli *client.Client, project string) error {
+	volumes, err := collectVolumes(cli, project)
+	if err != nil {
+		return err
+	}
+	for volumeName, volume := range volumes {
+		err = destroyVolume(cli, volume, volumeName)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func destroyVolume(cli *client.Client, volume []types.Volume, volumeName string) error {
+	ctx := context.Background()
+	for _, v := range volume {
+		fmt.Printf("Deleting volume %s ... ", volumeName)
+		err := cli.VolumeRemove(ctx, v.Name, false)
+		if err != nil {
+			return err
+		}
+		fmt.Println(v.Name)
 	}
 	return nil
 }

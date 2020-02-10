@@ -8,6 +8,7 @@ github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/compose-spec/compose-go v0.0.0-20200131085702-0b38cc2d8e6b h1:VK0c2Hfrg9FHjvJpWfGwiHPP2UeU0QZ6/5/dN0ehbSQ=
 github.com/compose-spec/compose-go v0.0.0-20200131085702-0b38cc2d8e6b/go.mod h1:KoJjdV81vERSyYVuQD63nryyt8ZTlqTWe8JuJIMhRo4=
+github.com/compose-spec/compose-go v0.0.0-20200203134931-8fe2177d8940 h1:MPp+H0Q8h0XyOi89BccSo5LxAf2rd/B1cDPjloSZv5k=
 github.com/containerd/containerd v1.3.2 h1:ForxmXkA6tPIvffbrDAcPUIB32QgXkt2XFj+F0UxetA=
 github.com/containerd/containerd v1.3.2/go.mod h1:bC6axHOhabU15QhwfG7w5PipXdVtMXFTttgp+kVtyUA=
 github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d h1:U+s90UTSYgptZMwQh2aRr3LuazLJIa+Pg3Kc1ylSYVY=
