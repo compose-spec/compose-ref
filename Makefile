@@ -1,5 +1,3 @@
-
-
 build: ## Run tests
 	GOPRIVATE=github.com/compose-spec/compose-go go build ./...
 
@@ -7,7 +5,7 @@ test: ## Run tests
 	GOPRIVATE=github.com/compose-spec/compose-go go test ./... -v
 
 fmt: ## Format go files
-	go fmt -w ./...
+	gofmt -w .
 
 imports: ## Format go files
 	goimports -w ./...
