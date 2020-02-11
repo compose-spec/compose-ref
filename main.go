@@ -13,14 +13,12 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/errdefs"
-	"github.com/docker/go-connections/nat"
 	"gopkg.in/yaml.v2"
 
 	"github.com/compose-spec/compose-go/loader"
 	compose "github.com/compose-spec/compose-go/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
@@ -125,13 +123,9 @@ func doUp(project string, config *compose.Config) error {
 	if err != nil {
 		return err
 	}
-	networks := map[string]string{}
-	for defaultNetworkName, networkConfig := range config.Networks {
-		name, id, err := createNetwork(cli, project, defaultNetworkName, networkConfig)
-		if err != nil {
-			return err
-		}
-		networks[name] = id
+	networks, err := internal.GetNetworksFromConfig(cli, project, config)
+	if err != nil {
+	    return err
 	}
 
 	for defaultVolumeName, volumeConfig := range config.Volumes {
@@ -247,7 +241,7 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 	labels[internal.LabelConfig] = string(b)
 
 	fmt.Printf("Creating container for service %s ... ", s.Name)
-	networkMode := networkMode(s, networks)
+	networkMode := internal.NetworkMode(s, networks)
 	mounts, err := createContainerMounts(s, prjDir)
 	if err != nil {
 		return err
@@ -267,7 +261,7 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 			NetworkDisabled: s.NetworkMode == "disabled",
 			MacAddress:      s.MacAddress,
 			StopSignal:      s.StopSignal,
-			ExposedPorts:    exposedPorts(s.Ports),
+			ExposedPorts:    internal.ExposedPorts(s.Ports),
 		},
 		&container.HostConfig{
 			NetworkMode:    networkMode,
@@ -289,21 +283,16 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 			Sysctls:        s.Sysctls,
 			Isolation:      container.Isolation(s.Isolation),
 			Init:           s.Init,
-			PortBindings:   buildContainerBindingOptions(s),
+			PortBindings:   internal.BuildContainerPortBindingsOptions(s),
 		},
-		buildDefaultNetworkConfig(s, networkMode),
+		internal.BuildDefaultNetworkConfig(s, networkMode),
 		"")
 	if err != nil {
 		return err
 	}
-	for key, net := range s.Networks {
-		config := &network.EndpointSettings{
-			Aliases: getAliases(s.Name, net),
-		}
-		err = cli.NetworkConnect(ctx, networks[key], create.ID, config)
-		if err != nil {
-			return err
-		}
+	err = internal.ConnectContainerToNetworks(ctx, cli, s, create.ID, networks)
+	if err != nil {
+	    return err
 	}
 	err = cli.ContainerStart(ctx, create.ID, types.ContainerStartOptions{})
 	if err != nil {
@@ -311,70 +300,6 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 	}
 	fmt.Println(create.ID)
 	return nil
-}
-
-func createNetwork(cli *client.Client, project string, networkDefaultName string, netConfig compose.NetworkConfig) (string, string, error) {
-	name := networkDefaultName
-	if netConfig.Name != "" {
-		name = netConfig.Name
-	}
-	createOptions := types.NetworkCreate{
-		Driver:     netConfig.Driver,
-		Internal:   netConfig.Internal,
-		Attachable: netConfig.Attachable,
-		Options:    netConfig.DriverOpts,
-		Labels:     netConfig.Labels,
-	}
-	if createOptions.Driver == "" {
-		createOptions.Driver = "bridge" //default driver
-	}
-	if createOptions.Labels == nil {
-		createOptions.Labels = map[string]string{}
-	}
-	createOptions.Labels[internal.LabelProject] = project
-	createOptions.Labels[internal.LabelNetwork] = name
-
-	if netConfig.External.External {
-		_, err := cli.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
-		fmt.Printf("Network %s declared as external. No new network will be created.\n", name)
-		if errdefs.IsNotFound(err) {
-			return "", "", fmt.Errorf("network %s declared as external, but could not be found. "+
-				"Please create the network manually using `docker network create %s` and try again",
-				name, name)
-		}
-	}
-
-	var networkID string
-	resource, err := cli.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
-	if err != nil {
-		if errdefs.IsNotFound(err) {
-			if netConfig.Ipam.Driver != "" || len(netConfig.Ipam.Config) > 0 {
-				createOptions.IPAM = &network.IPAM{}
-
-				if netConfig.Ipam.Driver != "" {
-					createOptions.IPAM.Driver = netConfig.Ipam.Driver
-				}
-
-				for _, ipamConfig := range netConfig.Ipam.Config {
-					config := network.IPAMConfig{
-						Subnet: ipamConfig.Subnet,
-					}
-					createOptions.IPAM.Config = append(createOptions.IPAM.Config, config)
-				}
-			}
-			var response types.NetworkCreateResponse
-			if response, err = cli.NetworkCreate(context.Background(), name, createOptions); err != nil {
-				return "", "", fmt.Errorf("failed to create network %s: %w", name, err)
-			}
-			networkID = response.ID
-		} else {
-			return "", "", err
-		}
-	} else {
-		networkID = resource.ID
-	}
-
-	return name, networkID, nil
 }
 
 func createVolume(cli *client.Client, project string, volumeDefaultName string, volumeConfig compose.VolumeConfig) error {
@@ -488,28 +413,6 @@ func collectContainers(cli *client.Client, project string) (map[string][]types.C
 	return containers, nil
 }
 
-func collectNetworks(cli *client.Client, project string) (map[string][]types.NetworkResource, error) {
-	networkList, err := cli.NetworkList(context.Background(), types.NetworkListOptions{
-		Filters: filters.NewArgs(filters.Arg("label", internal.LabelProject+"="+project)),
-	})
-	if err != nil {
-		return nil, err
-	}
-	networks := map[string][]types.NetworkResource{}
-	for _, r := range networkList {
-		resource := r.Labels[internal.LabelNetwork]
-		l, ok := networks[resource]
-		if !ok {
-			l = []types.NetworkResource{r}
-		} else {
-			l = append(l, r)
-		}
-		networks[resource] = l
-
-	}
-	return networks, nil
-}
-
 func collectVolumes(cli *client.Client, project string) (map[string][]types.Volume, error) {
 	filter := filters.NewArgs(filters.Arg("label", internal.LabelProject+"="+project))
 	list, err := cli.VolumeList(context.Background(), filter)
@@ -543,7 +446,7 @@ func doDown(project string, config *compose.Config) error {
 	if err != nil {
 		return err
 	}
-	err = destroyNetworks(cli, project)
+	err = internal.RemoveNetworks(cli, project)
 	if err != nil {
 		return err
 	}
@@ -561,32 +464,6 @@ func removeServices(cli *client.Client, project string) error {
 		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func destroyNetworks(cli *client.Client, project string) error {
-	networks, err := collectNetworks(cli, project)
-	if err != nil {
-		return err
-	}
-	for networkName, resource := range networks {
-		err = destroyNetwork(cli, resource, networkName)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func destroyNetwork(cli *client.Client, networkResources []types.NetworkResource, networkName string) error {
-	for _, networkResource := range networkResources {
-		fmt.Printf("Deleting network %s ... ", networkName)
-		err := cli.NetworkRemove(context.Background(), networkResource.ID)
-		if err != nil {
-			return err
-		}
-		fmt.Println(networkResource.Name)
 	}
 	return nil
 }
@@ -633,70 +510,4 @@ func load(file string) (*compose.Config, error) {
 		WorkingDir:  ".",
 		ConfigFiles: files,
 	})
-}
-
-func networkMode(serviceConfig compose.ServiceConfig, networks map[string]string) container.NetworkMode {
-	mode := serviceConfig.NetworkMode
-	if mode == "" {
-		if len(networks) > 0 {
-			for name := range getNetworksForService(serviceConfig) {
-				if _, ok := networks[name]; ok {
-					return container.NetworkMode(networks[name])
-				}
-			}
-		}
-		return "none"
-	}
-	return container.NetworkMode(mode)
-}
-
-func getNetworksForService(config compose.ServiceConfig) map[string]*compose.ServiceNetworkConfig {
-	if len(config.Networks) > 0 {
-		return config.Networks
-	}
-	return map[string]*compose.ServiceNetworkConfig{"default": nil}
-}
-
-func exposedPorts(ports []compose.ServicePortConfig) nat.PortSet {
-	natPorts := nat.PortSet{}
-	for _, p := range ports {
-		p := nat.Port(fmt.Sprintf("%d/%s", p.Target, p.Protocol))
-		natPorts[p] = struct{}{}
-	}
-	return natPorts
-}
-
-func getAliases(serviceName string, c *compose.ServiceNetworkConfig) []string {
-	aliases := []string{serviceName}
-	if c != nil {
-		aliases = append(aliases, c.Aliases...)
-	}
-	return aliases
-}
-
-func buildDefaultNetworkConfig(serviceConfig compose.ServiceConfig, networkMode container.NetworkMode) *network.NetworkingConfig {
-	config := map[string]*network.EndpointSettings{}
-	net := string(networkMode)
-	config[net] = &network.EndpointSettings{
-		Aliases: getAliases(serviceConfig.Name, serviceConfig.Networks[net]),
-	}
-
-	return &network.NetworkingConfig{
-		EndpointsConfig: config,
-	}
-}
-
-func buildContainerBindingOptions(serviceConfig compose.ServiceConfig) nat.PortMap {
-	bindings := nat.PortMap{}
-	for _, port := range serviceConfig.Ports {
-		p := nat.Port(fmt.Sprintf("%d/%s", port.Target, port.Protocol))
-		bind := []nat.PortBinding{}
-		binding := nat.PortBinding{}
-		if port.Published > 0 {
-			binding.HostPort = fmt.Sprint(port.Published)
-		}
-		bind = append(bind, binding)
-		bindings[p] = bind
-	}
-	return bindings
 }
