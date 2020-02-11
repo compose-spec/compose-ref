@@ -14,6 +14,11 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v2
 
+    - name: Setup go mod
+      env:
+        TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+      run: git config --global url."https://ndeloof:${TOKEN}@github.com".insteadOf "https://github.com"
+
     - name: Get dependencies
       run: go get -v -t -d ./...
 
