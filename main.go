@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/compose-spec/compose-ref/internal"
-	"github.com/docker/docker/api/types/filters"
 	"gopkg.in/yaml.v2"
 
 	"github.com/compose-spec/compose-go/loader"
@@ -129,7 +128,7 @@ func doUp(project string, config *compose.Config) error {
 	    return err
 	}
 
-	observedState, err := collectContainers(cli, project)
+	observedState, err := internal.CollectContainers(cli, project)
 	if err != nil {
 		return err
 	}
@@ -169,7 +168,7 @@ func doUp(project string, config *compose.Config) error {
 		}
 
 		// Some containers exist for service but with an obsolete configuration. We need to replace them
-		err = removeContainers(cli, containers)
+		err = internal.RemoveContainers(cli, containers)
 		if err != nil {
 			return err
 		}
@@ -182,29 +181,10 @@ func doUp(project string, config *compose.Config) error {
 
 	// Remaining containers in observed state don't have a matching service in Compose file => orphaned to be removed
 	for _, orphaned := range observedState {
-		err = removeContainers(cli, orphaned)
+		err = internal.RemoveContainers(cli, orphaned)
 		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func removeContainers(cli *client.Client, containers []types.Container) error {
-	ctx := context.Background()
-	for _, c := range containers {
-		if serviceName, ok := c.Labels[internal.LabelService]; ok {
-			fmt.Printf("Stopping containers for service %s ... ", serviceName)
-		}
-		err := cli.ContainerStop(ctx, c.ID, nil)
-		if err != nil {
-			return err
-		}
-		err = cli.ContainerRemove(ctx, c.ID, types.ContainerRemoveOptions{})
-		if err != nil {
-			return err
-		}
-		fmt.Println(c.ID)
 	}
 	return nil
 }
@@ -296,28 +276,6 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 	return nil
 }
 
-func collectContainers(cli *client.Client, project string) (map[string][]types.Container, error) {
-	containerList, err := cli.ContainerList(context.Background(), types.ContainerListOptions{
-		All:     true,
-		Filters: filters.NewArgs(filters.Arg("label", internal.LabelProject+"="+project)),
-	})
-	if err != nil {
-		return nil, err
-	}
-	containers := map[string][]types.Container{}
-	for _, c := range containerList {
-		service := c.Labels[internal.LabelService]
-		l, ok := containers[service]
-		if !ok {
-			l = []types.Container{c}
-		} else {
-			l = append(l, c)
-		}
-		containers[service] = l
-	}
-	return containers, nil
-}
-
 func doDown(project string, config *compose.Config) error {
 	cli, err := getClient()
 	if err != nil {
@@ -339,13 +297,13 @@ func doDown(project string, config *compose.Config) error {
 }
 
 func removeServices(cli *client.Client, project string) error {
-	containers, err := collectContainers(cli, project)
+	containers, err := internal.CollectContainers(cli, project)
 	if err != nil {
 		return err
 	}
 
 	for _, replicaList := range containers {
-		err = removeContainers(cli, replicaList)
+		err = internal.RemoveContainers(cli, replicaList)
 		if err != nil {
 			return err
 		}
