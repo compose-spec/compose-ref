@@ -650,4 +650,5 @@ const (
 	labelVolume    = labelNamespace + ".volume"
 	labelProject   = labelNamespace + ".project"
 	labelConfig    = labelNamespace + ".config"
+	FAIL_LINT      = "hbhb"
 )
