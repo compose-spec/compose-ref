@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/compose-spec/compose-ref/internal"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/errdefs"
@@ -167,7 +168,7 @@ func doUp(project string, config *compose.Config) error {
 
 		diverged := false
 		for _, cntr := range containers {
-			config := cntr.Labels[labelConfig]
+			config := cntr.Labels[internal.LabelConfig]
 			if config != expected {
 				diverged = true
 				break
@@ -204,7 +205,7 @@ func doUp(project string, config *compose.Config) error {
 func removeContainers(cli *client.Client, containers []types.Container) error {
 	ctx := context.Background()
 	for _, c := range containers {
-		if serviceName, ok := c.Labels[labelService]; ok {
+		if serviceName, ok := c.Labels[internal.LabelService]; ok {
 			fmt.Printf("Stopping containers for service %s ... ", serviceName)
 		}
 		err := cli.ContainerStop(ctx, c.ID, nil)
@@ -236,14 +237,14 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 	for k, v := range s.Labels {
 		labels[k] = v
 	}
-	labels[labelProject] = project
-	labels[labelService] = s.Name
+	labels[internal.LabelProject] = project
+	labels[internal.LabelService] = s.Name
 
 	b, err := yaml.Marshal(s)
 	if err != nil {
 		return err
 	}
-	labels[labelConfig] = string(b)
+	labels[internal.LabelConfig] = string(b)
 
 	fmt.Printf("Creating container for service %s ... ", s.Name)
 	networkMode := networkMode(s, networks)
@@ -330,8 +331,8 @@ func createNetwork(cli *client.Client, project string, networkDefaultName string
 	if createOptions.Labels == nil {
 		createOptions.Labels = map[string]string{}
 	}
-	createOptions.Labels[labelProject] = project
-	createOptions.Labels[labelNetwork] = name
+	createOptions.Labels[internal.LabelProject] = project
+	createOptions.Labels[internal.LabelNetwork] = name
 
 	if netConfig.External.External {
 		_, err := cli.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
@@ -409,8 +410,8 @@ func createVolume(cli *client.Client, project string, volumeDefaultName string, 
 		Driver:     volumeConfig.Driver,
 		DriverOpts: volumeConfig.DriverOpts,
 		Labels: map[string]string{
-			labelProject: project,
-			labelVolume:  name,
+			internal.LabelProject: project,
+			internal.LabelVolume:  name,
 		},
 	})
 
@@ -468,14 +469,14 @@ func buildTmpfsOptions(tmpfs *compose.ServiceVolumeTmpfs) *mount.TmpfsOptions {
 func collectContainers(cli *client.Client, project string) (map[string][]types.Container, error) {
 	containerList, err := cli.ContainerList(context.Background(), types.ContainerListOptions{
 		All:     true,
-		Filters: filters.NewArgs(filters.Arg("label", labelProject+"="+project)),
+		Filters: filters.NewArgs(filters.Arg("label", internal.LabelProject+"="+project)),
 	})
 	if err != nil {
 		return nil, err
 	}
 	containers := map[string][]types.Container{}
 	for _, c := range containerList {
-		service := c.Labels[labelService]
+		service := c.Labels[internal.LabelService]
 		l, ok := containers[service]
 		if !ok {
 			l = []types.Container{c}
@@ -489,14 +490,14 @@ func collectContainers(cli *client.Client, project string) (map[string][]types.C
 
 func collectNetworks(cli *client.Client, project string) (map[string][]types.NetworkResource, error) {
 	networkList, err := cli.NetworkList(context.Background(), types.NetworkListOptions{
-		Filters: filters.NewArgs(filters.Arg("label", labelProject+"="+project)),
+		Filters: filters.NewArgs(filters.Arg("label", internal.LabelProject+"="+project)),
 	})
 	if err != nil {
 		return nil, err
 	}
 	networks := map[string][]types.NetworkResource{}
 	for _, r := range networkList {
-		resource := r.Labels[labelNetwork]
+		resource := r.Labels[internal.LabelNetwork]
 		l, ok := networks[resource]
 		if !ok {
 			l = []types.NetworkResource{r}
@@ -510,14 +511,14 @@ func collectNetworks(cli *client.Client, project string) (map[string][]types.Net
 }
 
 func collectVolumes(cli *client.Client, project string) (map[string][]types.Volume, error) {
-	filter := filters.NewArgs(filters.Arg("label", labelProject+"="+project))
+	filter := filters.NewArgs(filters.Arg("label", internal.LabelProject+"="+project))
 	list, err := cli.VolumeList(context.Background(), filter)
 	if err != nil {
 		return nil, err
 	}
 	volumes := map[string][]types.Volume{}
 	for _, v := range list.Volumes {
-		resource := v.Labels[labelVolume]
+		resource := v.Labels[internal.LabelVolume]
 		l, ok := volumes[resource]
 		if !ok {
 			l = []types.Volume{*v}
@@ -699,12 +700,3 @@ func buildContainerBindingOptions(serviceConfig compose.ServiceConfig) nat.PortM
 	}
 	return bindings
 }
-
-const (
-	labelNamespace = "io.compose-spec"
-	labelService   = labelNamespace + ".service"
-	labelNetwork   = labelNamespace + ".network"
-	labelVolume    = labelNamespace + ".volume"
-	labelProject   = labelNamespace + ".project"
-	labelConfig    = labelNamespace + ".config"
-)
