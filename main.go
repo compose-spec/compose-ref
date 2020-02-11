@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/go-connections/nat"
 	"gopkg.in/yaml.v2"
@@ -71,7 +72,6 @@ func main() {
 					if err != nil {
 						return err
 					}
-
 					return doUp(project, config)
 				},
 			},
@@ -145,13 +145,17 @@ func doUp(project string, config *compose.Config) error {
 		return err
 	}
 
+	prjDir, err := filepath.Abs(filepath.Dir(config.Filename))
+	if err != nil {
+		return err
+	}
 	err = config.WithServices(nil, func(service compose.ServiceConfig) error {
 		containers := observedState[service.Name]
 		delete(observedState, service.Name)
 
-		// If no container is set for the service yet, then we just need to create them
+		// If no container exists for the service yet, then we just need to create them
 		if len(containers) == 0 {
-			return createService(cli, project, service, networks)
+			return createService(cli, project, prjDir, service, networks)
 		}
 
 		// We compare container config stored as plain yaml in a label with expected one
@@ -180,7 +184,7 @@ func doUp(project string, config *compose.Config) error {
 		if err != nil {
 			return err
 		}
-		return createService(cli, project, service, networks)
+		return createService(cli, project, prjDir, service, networks)
 	})
 
 	if err != nil {
@@ -216,7 +220,7 @@ func removeContainers(cli *client.Client, containers []types.Container) error {
 	return nil
 }
 
-func createService(cli *client.Client, project string, s compose.ServiceConfig, networks map[string]string) error {
+func createService(cli *client.Client, project string, prjDir string, s compose.ServiceConfig, networks map[string]string) error {
 	ctx := context.Background()
 
 	var shmSize int64
@@ -243,6 +247,10 @@ func createService(cli *client.Client, project string, s compose.ServiceConfig, 
 
 	fmt.Printf("Creating container for service %s ... ", s.Name)
 	networkMode := networkMode(s, networks)
+	mounts, err := createContainerMounts(s, prjDir)
+	if err != nil {
+		return err
+	}
 	create, err := cli.ContainerCreate(ctx,
 		&container.Config{
 			Hostname:        s.Hostname,
@@ -270,6 +278,7 @@ func createService(cli *client.Client, project string, s compose.ServiceConfig, 
 			ExtraHosts:     s.ExtraHosts,
 			IpcMode:        container.IpcMode(s.Ipc),
 			Links:          s.Links,
+			Mounts:         mounts,
 			PidMode:        container.PidMode(s.Pid),
 			Privileged:     s.Privileged,
 			ReadonlyRootfs: s.ReadOnly,
@@ -406,6 +415,54 @@ func createVolume(cli *client.Client, project string, volumeDefaultName string, 
 	})
 
 	return err
+}
+
+func createContainerMounts(s compose.ServiceConfig, prjDir string) ([]mount.Mount, error) {
+	var mounts []mount.Mount
+	for _, v := range s.Volumes {
+		source := v.Source
+		if !filepath.IsAbs(source) {
+			source = filepath.Join(prjDir, source)
+		}
+		mounts = append(mounts, mount.Mount{
+			Type:          mount.Type(v.Type),
+			Source:        source,
+			Target:        v.Target,
+			ReadOnly:      v.ReadOnly,
+			Consistency:   mount.Consistency(v.Consistency),
+			BindOptions:   buildBindOption(v.Bind),
+			VolumeOptions: buildVolumeOptions(v.Volume),
+			TmpfsOptions:  buildTmpfsOptions(v.Tmpfs),
+		})
+	}
+	return mounts, nil
+}
+
+func buildBindOption(bind *compose.ServiceVolumeBind) *mount.BindOptions {
+	if bind == nil {
+		return nil
+	}
+	return &mount.BindOptions{
+		Propagation: mount.Propagation(bind.Propagation),
+	}
+}
+
+func buildVolumeOptions(vol *compose.ServiceVolumeVolume) *mount.VolumeOptions {
+	if vol == nil {
+		return nil
+	}
+	return &mount.VolumeOptions{
+		NoCopy: vol.NoCopy,
+	}
+}
+
+func buildTmpfsOptions(tmpfs *compose.ServiceVolumeTmpfs) *mount.TmpfsOptions {
+	if tmpfs == nil {
+		return nil
+	}
+	return &mount.TmpfsOptions{
+		SizeBytes: tmpfs.Size,
+	}
 }
 
 func collectContainers(cli *client.Client, project string) (map[string][]types.Container, error) {
@@ -569,7 +626,7 @@ func load(file string) (*compose.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	files := []compose.ConfigFile{}
+	var files []compose.ConfigFile
 	files = append(files, compose.ConfigFile{Filename: file, Config: config})
 	return loader.Load(compose.ConfigDetails{
 		WorkingDir:  ".",
