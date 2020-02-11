@@ -19,7 +19,6 @@ jobs:
 
     - name: Lint check
       uses: actions-contrib/golangci-lint@v1
-      args: run --config ./golangci.yml ./
 
     - name: Build
       run: make build
