@@ -32,10 +32,10 @@ const banner = `
 `
 
 func main() {
-	fmt.Print(banner)
 	var file string
 	var project string
 
+	fmt.Print(banner)
 	app := &commandLine.App{
 		Name:  "compose-ref",
 		Usage: "Reference Compose Specification implementation",
@@ -164,7 +164,7 @@ func doUp(project string, config *compose.Config) error {
 			return nil
 		}
 
-		// Some container exist for service but with an obsolete configuration. We need to replace them
+		// Some containers exist for service but with an obsolete configuration. We need to replace them
 		err = removeContainers(cli, containers)
 		if err != nil {
 			return err
@@ -190,7 +190,7 @@ func removeContainers(cli *client.Client, containers []types.Container) error {
 	ctx := context.Background()
 	for _, c := range containers {
 		if serviceName, ok := c.Labels[labelService]; ok {
-			fmt.Printf("Stopping container for service %s ... ", serviceName)
+			fmt.Printf("Stopping containers for service %s ... ", serviceName)
 		}
 		err := cli.ContainerStop(ctx, c.ID, nil)
 		if err != nil {
@@ -305,7 +305,7 @@ func createNetwork(cli *client.Client, project string, networkDefaultName string
 		_, err := cli.NetworkInspect(context.Background(), name, types.NetworkInspectOptions{})
 		fmt.Printf("Network %s declared as external. No new network will be created.\n", name)
 		if errdefs.IsNotFound(err) {
-			return fmt.Errorf("Network %s declared as external, but could not be found. "+
+			return fmt.Errorf("network %s declared as external, but could not be found. "+
 				"Please create the network manually using `docker network create %s` and try again",
 				name, name)
 		}
@@ -340,7 +340,7 @@ func createNetwork(cli *client.Client, project string, networkDefaultName string
 }
 
 func collectContainers(cli *client.Client, project string) (map[string][]types.Container, error) {
-	list, err := cli.ContainerList(context.Background(), types.ContainerListOptions{
+	containerList, err := cli.ContainerList(context.Background(), types.ContainerListOptions{
 		All:     true,
 		Filters: filters.NewArgs(filters.Arg("label", labelProject+"="+project)),
 	})
@@ -348,7 +348,7 @@ func collectContainers(cli *client.Client, project string) (map[string][]types.C
 		return nil, err
 	}
 	containers := map[string][]types.Container{}
-	for _, c := range list {
+	for _, c := range containerList {
 		service := c.Labels[labelService]
 		l, ok := containers[service]
 		if !ok {
@@ -362,14 +362,14 @@ func collectContainers(cli *client.Client, project string) (map[string][]types.C
 }
 
 func collectNetworks(cli *client.Client, project string) (map[string][]types.NetworkResource, error) {
-	list, err := cli.NetworkList(context.Background(), types.NetworkListOptions{
+	networkList, err := cli.NetworkList(context.Background(), types.NetworkListOptions{
 		Filters: filters.NewArgs(filters.Arg("label", labelProject+"="+project)),
 	})
 	if err != nil {
 		return nil, err
 	}
 	networks := map[string][]types.NetworkResource{}
-	for _, r := range list {
+	for _, r := range networkList {
 		resource := r.Labels[labelNetwork]
 		l, ok := networks[resource]
 		if !ok {
