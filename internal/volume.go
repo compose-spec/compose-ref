@@ -25,6 +25,29 @@ func GetVolumesFromConfig(cli *client.Client, project string, config *compose.Co
 	return nil
 }
 
+var fakeBindings = make(map[string]string) // Mapping on Map[ConfigName]File
+func GetConfigsFromConfig(prjDir string, config *compose.Config) error {
+	for k, v := range config.Configs {
+		name := k
+		if v.Name != "" {
+			name = v.Name
+		}
+		fakeBindings[name] = v.File
+	}
+	return nil
+}
+
+func GetSecretsFromConfig(prjDir string, config *compose.Config) error {
+	for k, v := range config.Secrets {
+		name := k
+		if v.Name != "" {
+			name = v.Name
+		}
+		fakeBindings[name] = v.File
+	}
+	return nil
+}
+
 func CreateVolume(cli *client.Client, project string, volumeDefaultName string, volumeConfig compose.VolumeConfig) error {
 	name := volumeDefaultName
 	if volumeConfig.Name != "" {
@@ -111,6 +134,47 @@ func collectVolumes(cli *client.Client, project string) (map[string][]types.Volu
 		volumes[resource] = l
 	}
 	return volumes, nil
+}
+
+func CreateContainerConfigMounts(s compose.ServiceConfig, prjDir string) ([]mount.Mount, error) {
+	var fileRefs []compose.FileReferenceConfig
+	for _, f := range s.Configs {
+		fileRefs = append(fileRefs, compose.FileReferenceConfig(f))
+	}
+	return createFakeMounts(fileRefs, prjDir)
+}
+
+func CreateContainerSecretMounts(s compose.ServiceConfig, prjDir string) ([]mount.Mount, error) {
+	var fileRefs []compose.FileReferenceConfig
+	for _, f := range s.Secrets {
+		fileRefs = append(fileRefs, compose.FileReferenceConfig(f))
+	}
+	return createFakeMounts(fileRefs, prjDir)
+}
+
+func createFakeMounts(fileRefs []compose.FileReferenceConfig, prjDir string) ([]mount.Mount, error) {
+	var mounts []mount.Mount
+	for _, v := range fileRefs {
+		source, ok := fakeBindings[v.Source]
+		if !ok {
+			source = v.Source
+		}
+		target := v.Target
+		if target == "" {
+			target = filepath.Join("/", source)
+		}
+		if !filepath.IsAbs(source) {
+			source = filepath.Join(prjDir, source)
+		}
+		mounts = append(mounts, mount.Mount{
+			Type:        compose.VolumeTypeBind,
+			Source:      source,
+			Target:      target,
+			ReadOnly:    true,
+			Consistency: mount.ConsistencyDefault,
+		})
+	}
+	return mounts, nil
 }
 
 func CreateContainerMounts(s compose.ServiceConfig, prjDir string) ([]mount.Mount, error) {
