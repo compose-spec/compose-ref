@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/compose-spec/compose-ref/internal"
 	"gopkg.in/yaml.v2"
 
 	"github.com/compose-spec/compose-go/loader"
@@ -19,6 +18,8 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-units"
 	commandLine "github.com/urfave/cli/v2"
+
+	"github.com/compose-spec/compose-ref/internal"
 )
 
 const banner = `
@@ -118,14 +119,30 @@ func doUp(project string, config *compose.Config) error {
 	if err != nil {
 		return err
 	}
+
+	prjDir, err := filepath.Abs(filepath.Dir(config.Filename))
+	if err != nil {
+		return err
+	}
+
 	networks, err := internal.GetNetworksFromConfig(cli, project, config)
 	if err != nil {
-	    return err
+		return err
 	}
 
 	err = internal.GetVolumesFromConfig(cli, project, config)
 	if err != nil {
-	    return err
+		return err
+	}
+
+	err = internal.GetConfigsFromConfig(prjDir, config)
+	if err != nil {
+		return err
+	}
+
+	err = internal.GetSecretsFromConfig(prjDir, config)
+	if err != nil {
+		return err
 	}
 
 	observedState, err := internal.CollectContainers(cli, project)
@@ -133,10 +150,6 @@ func doUp(project string, config *compose.Config) error {
 		return err
 	}
 
-	prjDir, err := filepath.Abs(filepath.Dir(config.Filename))
-	if err != nil {
-		return err
-	}
 	err = config.WithServices(nil, func(service compose.ServiceConfig) error {
 		containers := observedState[service.Name]
 		delete(observedState, service.Name)
@@ -220,6 +233,16 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 	if err != nil {
 		return err
 	}
+	configMounts, err := internal.CreateContainerConfigMounts(s, prjDir)
+	if err != nil {
+		return err
+	}
+	secretsMounts, err := internal.CreateContainerSecretMounts(s, prjDir)
+	if err != nil {
+		return err
+	}
+	mounts = append(mounts, configMounts...)
+	mounts = append(mounts, secretsMounts...)
 	create, err := cli.ContainerCreate(ctx,
 		&container.Config{
 			Hostname:        s.Hostname,
@@ -266,7 +289,7 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 	}
 	err = internal.ConnectContainerToNetworks(ctx, cli, s, create.ID, networks)
 	if err != nil {
-	    return err
+		return err
 	}
 	err = cli.ContainerStart(ctx, create.ID, types.ContainerStartOptions{})
 	if err != nil {
