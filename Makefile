@@ -2,7 +2,7 @@
 
 .PHONY: build
 build: ## Build compose-ref binary
-	GOPRIVATE=github.com/compose-spec/compose-go go build ./...
+	GOPRIVATE=github.com/compose-spec/compose-go go build compose-ref.go
 
 .PHONY: test
 test: ## Run tests
