@@ -215,7 +215,7 @@ func createService(cli *client.Client, project string, prjDir string, s compose.
 	labels[internal.LabelConfig] = string(b)
 
 	fmt.Printf("Creating container for service %s ... ", s.Name)
-	networkMode := internal.NetworkMode(s, networks)
+	networkMode := internal.NetworkMode(project, s, networks)
 	mounts, err := internal.CreateContainerMounts(s, prjDir)
 	if err != nil {
 		return err
