@@ -23,6 +23,14 @@ func GetNetworksFromConfig(cli *client.Client, project string, config *compose.C
 		}
 		networks[name] = id
 	}
+	if _, ok := networks["default"]; !ok {
+		name, id, err := createNetwork(cli, project, "default",
+			compose.NetworkConfig{Name: fmt.Sprintf("%s-default", project)})
+		if err != nil {
+			return nil, err
+		}
+		networks[name] = id
+	}
 	return networks, nil
 }
 
@@ -138,11 +146,11 @@ func collectNetworks(cli *client.Client, project string) (map[string][]types.Net
 	return networks, nil
 }
 
-func NetworkMode(serviceConfig compose.ServiceConfig, networks map[string]string) container.NetworkMode {
+func NetworkMode(project string, serviceConfig compose.ServiceConfig, networks map[string]string) container.NetworkMode {
 	mode := serviceConfig.NetworkMode
 	if mode == "" {
 		if len(networks) > 0 {
-			for name := range getNetworksForService(serviceConfig) {
+			for name := range getNetworksForService(project, serviceConfig) {
 				if _, ok := networks[name]; ok {
 					return container.NetworkMode(networks[name])
 				}
@@ -153,32 +161,29 @@ func NetworkMode(serviceConfig compose.ServiceConfig, networks map[string]string
 	return container.NetworkMode(mode)
 }
 
-func getNetworksForService(config compose.ServiceConfig) map[string]*compose.ServiceNetworkConfig {
+func getNetworksForService(project string, config compose.ServiceConfig) map[string]*compose.ServiceNetworkConfig {
 	if len(config.Networks) > 0 {
 		return config.Networks
 	}
-	return map[string]*compose.ServiceNetworkConfig{"default": nil}
+	return map[string]*compose.ServiceNetworkConfig{fmt.Sprintf("%s-default", project): nil}
 }
-
 
 func BuildDefaultNetworkConfig(serviceConfig compose.ServiceConfig, networkMode container.NetworkMode) *network.NetworkingConfig {
 	config := map[string]*network.EndpointSettings{}
 	net := string(networkMode)
 	config[net] = &network.EndpointSettings{
-		Aliases: getAliases(serviceConfig.Name, serviceConfig.Networks[net]),
+		Aliases: getAliases(serviceConfig.Name, serviceConfig.Networks[net], ""),
 	}
-
 	return &network.NetworkingConfig{
 		EndpointsConfig: config,
 	}
 }
 
-
 func ConnectContainerToNetworks(context context.Context, cli *client.Client,
 	serviceConfig compose.ServiceConfig, containerID string, networks map[string]string) error {
 	for key, net := range serviceConfig.Networks {
 		config := &network.EndpointSettings{
-			Aliases: getAliases(serviceConfig.Name, net),
+			Aliases: getAliases(serviceConfig.Name, net, containerID),
 		}
 		err := cli.NetworkConnect(context, networks[key], containerID, config)
 		if err != nil {
@@ -188,8 +193,11 @@ func ConnectContainerToNetworks(context context.Context, cli *client.Client,
 	return nil
 }
 
-func getAliases(serviceName string, c *compose.ServiceNetworkConfig) []string {
+func getAliases(serviceName string, c *compose.ServiceNetworkConfig, containerID string) []string {
 	aliases := []string{serviceName}
+	if containerID != "" {
+		aliases = append(aliases, containerShortID(containerID))
+	}
 	if c != nil {
 		aliases = append(aliases, c.Aliases...)
 	}
@@ -218,4 +226,8 @@ func ExposedPorts(ports []compose.ServicePortConfig) nat.PortSet {
 		natPorts[p] = struct{}{}
 	}
 	return natPorts
+}
+
+func containerShortID(containerID string) string {
+	return containerID[:12]
 }
