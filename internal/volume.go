@@ -25,25 +25,26 @@ func GetVolumesFromConfig(cli *client.Client, project string, config *compose.Co
 	return nil
 }
 
-var fakeBindings = make(map[string]string) // Mapping on Map[ConfigName]File
+var fakeConfigBindings = make(map[string]string) // Mapping on Map[ConfigName]File
 func GetConfigsFromConfig(prjDir string, config *compose.Config) error {
 	for k, v := range config.Configs {
 		name := k
 		if v.Name != "" {
 			name = v.Name
 		}
-		fakeBindings[name] = v.File
+		fakeConfigBindings[name] = v.File
 	}
 	return nil
 }
 
+var fakeSecretBindings = make(map[string]string) // Mapping on Map[SecretName]File
 func GetSecretsFromConfig(prjDir string, config *compose.Config) error {
 	for k, v := range config.Secrets {
 		name := k
 		if v.Name != "" {
 			name = v.Name
 		}
-		fakeBindings[name] = v.File
+		fakeSecretBindings[name] = v.File
 	}
 	return nil
 }
@@ -141,7 +142,7 @@ func CreateContainerConfigMounts(s compose.ServiceConfig, prjDir string) ([]moun
 	for _, f := range s.Configs {
 		fileRefs = append(fileRefs, compose.FileReferenceConfig(f))
 	}
-	return createFakeMounts(fileRefs, prjDir)
+	return createFakeMounts(fileRefs, fakeConfigBindings, prjDir)
 }
 
 func CreateContainerSecretMounts(s compose.ServiceConfig, prjDir string) ([]mount.Mount, error) {
@@ -149,15 +150,15 @@ func CreateContainerSecretMounts(s compose.ServiceConfig, prjDir string) ([]moun
 	for _, f := range s.Secrets {
 		fileRefs = append(fileRefs, compose.FileReferenceConfig(f))
 	}
-	return createFakeMounts(fileRefs, prjDir)
+	return createFakeMounts(fileRefs, fakeSecretBindings, prjDir)
 }
 
-func createFakeMounts(fileRefs []compose.FileReferenceConfig, prjDir string) ([]mount.Mount, error) {
+func createFakeMounts(fileRefs []compose.FileReferenceConfig, fakeBindings map[string]string, prjDir string) ([]mount.Mount, error) {
 	var mounts []mount.Mount
 	for _, v := range fileRefs {
 		source, ok := fakeBindings[v.Source]
 		if !ok {
-			source = v.Source
+			return nil, fmt.Errorf("couldn't find reference %q", v.Source)
 		}
 		target := v.Target
 		if target == "" {
