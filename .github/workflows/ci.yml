@@ -17,6 +17,9 @@ jobs:
     - name: Lint
       run: make lint
 
+    - name: Check licenses
+      run: make check-license
+
     - name: Build
       run: make build
 
