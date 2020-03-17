@@ -3,6 +3,11 @@
 
 ![logo](logo.png)
 
-This project host the reference implementation of the Compose specification. It is not designed for production use
-but to demonstrate implementation of Compose Specification on top of Docker API and offer a code base to experiment
-with changes being proposed to the Compose Specification.
+This repository hosts the reference implementation for the Compose
+specification. It is not designed for end users or for production purposes but
+instead serves as a test harness to experiment with Compose specification
+changes. The reference implementation targets the
+[Docker API](https://docs.docker.com/engine/api/).
+
+Before creating an issue or submitting a contribution, please read the
+[contributing guide](CONTRIBUTING.md).
