@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 
 PACKAGE=github.com/compose-spec/compose-ref
+IMAGE_PREFIX=composespec/compose-ref-
 
 GOFLAGS=-mod=vendor
 
@@ -16,9 +17,13 @@ test: ## Run tests
 fmt: ## Format go files
 	@goimports -e -w ./
 
+.PHONY: build-validate-image
+build-validate-image:
+	docker build . -f ci/Dockerfile -t $(IMAGE_PREFIX)validate
+
 .PHONY: lint
-lint: ## Verify Go files
-	golangci-lint run --config ./golangci.yml ./
+lint: build-validate-image
+	docker run --rm $(IMAGE_PREFIX)validate bash -c "golangci-lint run --config ./golangci.yml ./"
 
 .PHONY: setup
 setup: ## Setup the precommit hook
