@@ -17,6 +17,9 @@ jobs:
     - name: Lint
       run: DOCKER_BUILDKIT=1 make lint
 
+    - name: Check licenses
+      run: DOCKER_BUILDKIT=1 make check-license
+
     - name: Build
       run: make build
 
