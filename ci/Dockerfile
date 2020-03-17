@@ -18,6 +18,7 @@ WORKDIR /go/src
 
 ARG GOLANGCILINT_VERSION=v1.24.0
 RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin ${GOLANGCILINT_VERSION}
+RUN go get -v -u github.com/kunalkushwaha/ltag && rm -rf /go/src/github.com/kunalkushwaha
 
 ENV GOFLAGS=-mod=vendor
 COPY . .
