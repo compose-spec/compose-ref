@@ -1,12 +1,16 @@
 .DEFAULT_GOAL := help
 
+PACKAGE=github.com/compose-spec/compose-ref
+
+GOFLAGS=-mod=vendor
+
 .PHONY: build
 build: ## Build compose-ref binary
-	GOPRIVATE=github.com/compose-spec/compose-go go build compose-ref.go
+	GOPRIVATE=$(PACKAGE) GOFLAGS=$(GOFLAGS) go build compose-ref.go
 
 .PHONY: test
 test: ## Run tests
-	GOPRIVATE=github.com/compose-spec/compose-go go test ./... -v
+	GOPRIVATE=$(PACKAGE) GOFLAGS=$(GOFLAGS) go test ./... -v
 
 .PHONY: fmt
 fmt: ## Format go files
