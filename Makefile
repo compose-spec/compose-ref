@@ -21,7 +21,8 @@ GOFLAGS=-mod=vendor
 
 .PHONY: build
 build: ## Build compose-ref binary
-	GOPRIVATE=$(PACKAGE) GOFLAGS=$(GOFLAGS) go build compose-ref.go
+	@mkdir -p bin/
+	GOPRIVATE=$(PACKAGE) GOFLAGS=$(GOFLAGS) go build -o bin/compose-ref compose-ref.go
 
 .PHONY: test
 test: ## Run tests
