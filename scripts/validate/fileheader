@@ -25,4 +25,4 @@ fi
 
 BASEPATH="${1-}"
 
-ltag -t "${BASEPATH}scripts/validate/template" --excludes "validate vendor" --check -v
+ltag -t "${BASEPATH}scripts/validate/template" --excludes "bin validate vendor" --check -v
