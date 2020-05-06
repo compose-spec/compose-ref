@@ -201,6 +201,7 @@ func doUp(project string, config *compose.Config) error {
 		if err != nil {
 			return err
 		}
+
 		return createService(cli, project, prjDir, service, networks)
 	})
 
@@ -220,6 +221,11 @@ func doUp(project string, config *compose.Config) error {
 
 func createService(cli *client.Client, project string, prjDir string, s compose.ServiceConfig, networks map[string]string) error {
 	ctx := context.Background()
+
+	err := internal.PullImageIfWithout(cli, ctx, s.Name)
+	if err != nil {
+		return err
+	}
 
 	var shmSize int64
 	if s.ShmSize != "" {
