@@ -15,6 +15,24 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v2
 
+    # https://github.com/dependabot/dependabot-core/issues/1995
+    - name: Update dependabot PR
+      if: github.event.pusher.name == 'dependabot-preview[bot]'
+      run: |
+        git config --local user.email "compose-ref-ci@docker.com"
+        git config --local user.name "CI GitHub Action"
+        go mod tidy -v
+        go mod vendor -v
+        git add .
+        git commit -sm'Update go.sum and vendoring after dependabot PR'
+    - name: Update dependabot PR if needed
+      if: github.event.pusher.name == 'dependabot-preview[bot]'
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+        force: false
+
     - name: Lint
       run: DOCKER_BUILDKIT=1 make lint
 
