@@ -1,4 +1,11 @@
+# DEPRECATION NOTICE
+
+This repository is **DEPRECATED**
+The Compose Specification Reference Implementation is now [Docker Compose V2](http://github.com/docker/compose).
+
+
 # Compose Specification Reference Implementation
+
 ![Continuous integration](https://github.com/compose-spec/compose-ref/workflows/Continuous%20integration/badge.svg)
 
 This repository hosts the reference implementation for the Compose
