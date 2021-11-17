@@ -186,9 +186,11 @@ func getNetworksForService(project string, config compose.ServiceConfig) map[str
 
 func BuildDefaultNetworkConfig(serviceConfig compose.ServiceConfig, networkMode container.NetworkMode) *network.NetworkingConfig {
 	config := map[string]*network.EndpointSettings{}
-	net := string(networkMode)
-	config[net] = &network.EndpointSettings{
-		Aliases: getAliases(serviceConfig.Name, serviceConfig.Networks[net], ""),
+	if networkMode.IsUserDefined() {
+		net := networkMode.UserDefined()
+		config[net] = &network.EndpointSettings{
+			Aliases: getAliases(serviceConfig.Name, serviceConfig.Networks[net], ""),
+		}
 	}
 	return &network.NetworkingConfig{
 		EndpointsConfig: config,
